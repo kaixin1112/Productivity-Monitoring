@@ -17,4 +17,4 @@ if __name__ == "__main__":
     webbrowser.open(url)
 
     # Start the FastAPI server
-    uvicorn.run("camera_ip:app", host=ip, port=port, reload=True)
+    uvicorn.run("operator_pg:app", host=ip, port=port, reload=True)

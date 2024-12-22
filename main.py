@@ -199,8 +199,8 @@ def engineer_dashboard():
         camera_id_menu.grid(row=0, column=2, padx=5, pady=5, sticky="ew")
 
         # Technique
-        technique_var = tk.StringVar(value="Pose Estimation")
-        technique_menu = tk.OptionMenu(row_frame, technique_var, "Pose Estimation", "Object Detection (Cam)", "Object Detection (Vid)", "Hand Skeleton")
+        technique_var = tk.StringVar(value="Person Detection")
+        technique_menu = tk.OptionMenu(row_frame, technique_var, "Person Detection", "Pose Estimation", "Object Detection (Cam)", "Object Detection (Vid)", "Hand Skeleton")
         technique_menu.config(font=("Arial", 12), width=20)
         technique_menu.grid(row=0, column=3, padx=5, pady=5, sticky="ew")
 
@@ -277,7 +277,7 @@ def engineer_dashboard():
         # Define default values
         default_camera_type = "USB Camera"
         default_camera_id = "0"
-        default_technique = "Pose Estimation"
+        default_technique = "Person Detection"
 
         all_defaults = True  # Assume all rows are default initially
 
