@@ -273,8 +273,33 @@ def engineer_dashboard():
 
     # Save Each Camera ROI in txt File
     def save_ROI():
+        """Save all settings to a file and proceed to the next step."""
+        # Define default values
+        default_camera_type = "USB Camera"
+        default_camera_id = "0"
+        default_technique = "Pose Estimation"
+
+        all_defaults = True  # Assume all rows are default initially
+
+        for row in rows:
+            camera_type = row[2].get()
+            camera_id = row[1].get()
+            technique = row[3].get()
+
+            # Check if any value is not default
+            if camera_type != default_camera_type or camera_id != default_camera_id or technique != default_technique:
+                all_defaults = False
+                break
+
+        if all_defaults:
+            print("All settings are default. Skipping save.")
+            access_step()  # Skip saving and go to the next step
+            return
+
+        # Save data if not all rows are default
         save_data()
-        access_step()
+        access_step()  # Proceed to the next step
+
 
     def create_layout():
         """Set up the overall layout of the dashboard."""
@@ -285,7 +310,20 @@ def engineer_dashboard():
         # Top Frame
         top_frame = tk.Frame(root, bg="lightgray")
         top_frame.pack(fill="x", pady=10)
+
+        # IP Address Label
         tk.Label(top_frame, text=f"IP Address: {get_ip_address()}", font=("Arial", 20), bg="lightgray").pack(side="left", padx=10)
+
+        # Return Button
+        return_button = tk.Button(
+            top_frame, 
+            text="Return", 
+            font=("Arial", 14, "bold"), 
+            bg="lightcoral", 
+            activebackground="red", 
+            command=main_page
+        )
+        return_button.pack(side="right", padx=10)
 
         # Create a Text widget for multi-colored title
         title = tk.Text(root, height=1, width=30, font=("Arial", 16, "bold"), bg=app_bg, bd=0, highlightthickness=0)
@@ -333,6 +371,7 @@ def engineer_dashboard():
         tk.Button(
             button_frame, text="Next", font=("Arial", 14), bg="lightyellow", activebackground="lightyellow", command=save_ROI
         ).pack(side="left", padx=10, fill="x", expand=True)
+
 
     # Call create_layout when initializing the dashboard
     create_layout()
@@ -477,26 +516,46 @@ def engineer_dashboard():
         else:
             tk.messagebox.showinfo("Info", "At least one row must remain.")
 
+
     def save_settings():
-        """Save the settings from all rows to a file."""
+        """Save the settings from all rows to a file only if valid data exists."""
         global rows_1
         settings_data = []
 
         for row in rows_1:
             try:
+                # Ensure all fields have valid data
+                if len(row) < 7:  # Ensure row has all expected widgets
+                    continue
+
+                camera_value = row[2].get().strip()
+                roi_value = row[3].get().strip()
+                object_value = row[4].get().strip()
+                check_msg_value = row[5].get().strip()
+                cancel_msg_value = row[6].get().strip()
+
+                # Skip rows with empty critical fields (Camera, ROI, or Object)
+                if not (camera_value or roi_value or object_value or check_msg_value or cancel_msg_value):
+                    continue
+
+                # Add row data to the list if it's valid
                 row_data = {
-                    "Camera": row[2].get(),  # Camera ID dropdown value
-                    "ROI": row[3].get(),     # ROI dropdown value
-                    "Object": row[4].get(),  # Object entry value
-                    "Check Msg": row[5].get(),  # ✓ Msg value
-                    "Cancel Msg": row[6].get(),  # X Msg value
+                    "Camera": camera_value,
+                    "ROI": roi_value,
+                    "Object": object_value,
+                    "Check Msg": check_msg_value,
+                    "Cancel Msg": cancel_msg_value,
                 }
                 settings_data.append(row_data)
             except Exception as e:
                 messagebox.showerror("Error", f"Error while reading row data: {e}")
                 return
 
-        # Save data to a JSON file
+        # Check if settings_data is empty
+        if not settings_data:
+            return  # Skip saving process entirely
+
+        # Save valid data to the JSON file
         try:
             with open("steps_data.json", "w") as file:
                 json.dump(settings_data, file, indent=4)  # Pretty-print with indentation
@@ -510,10 +569,13 @@ def engineer_dashboard():
         save_settings()
         main_page()
 
-    # From Access Step back to Camera Page
+
     def return_camera():
-        save_settings()
-        engineer_dashboard()
+        try:
+            save_settings()  # Save settings before navigating
+        except Exception as e:
+            messagebox.showerror("Error", f"Error while saving settings: {e}")
+        engineer_dashboard()  # Navigate to the camera page
 
 
     def access_step():
@@ -529,7 +591,20 @@ def engineer_dashboard():
         # Top Frame
         top_frame = tk.Frame(root, bg="lightgray", relief=tk.FLAT, borderwidth=0)
         top_frame.pack(fill="x", pady=10)
+        
+        # IP Address Label
         tk.Label(top_frame, text=f"IP Address: {get_ip_address()}", font=("Arial", 20), bg="lightgray").pack(side="left", padx=10)
+
+        # Return Button
+        return_button = tk.Button(
+            top_frame, 
+            text="Return", 
+            font=("Arial", 14, "bold"), 
+            bg="lightcoral", 
+            activebackground="red", 
+            command=main_page
+        )
+        return_button.pack(side="right", padx=10)
 
         # Create a Text widget for multi-colored title
         title = tk.Text(root, height=1, width=30, font=("Arial", 16, "bold"), bg=app_bg, bd=0, highlightthickness=0)
@@ -591,10 +666,6 @@ def engineer_dashboard():
 
         tk.Button(
             button_frame, text="Prev", font=("Arial", 14), bg="lightyellow", activebackground="lightyellow", command=return_camera
-        ).pack(side="left", padx=10, fill="x", expand=True)
-
-        tk.Button(
-            button_frame, text="Ret", font=("Arial", 14), bg="lightyellow", activebackground="lightyellow", command=return_main
         ).pack(side="left", padx=10, fill="x", expand=True)
 
 
