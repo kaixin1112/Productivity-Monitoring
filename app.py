@@ -1,197 +1,168 @@
-from flask import Flask, render_template, request, redirect, url_for, Response
-from datetime import datetime
-import cv2
 import os
-import webbrowser
-from threading import Timer
-import numpy as np
+import cv2
 import time
+import socket
+import numpy as np
+from flask import Flask, render_template, request, redirect, url_for, Response
+from threading import Timer
+from datetime import datetime
+import webbrowser
 
-#from Person_Det import CONFIG_PATH
-#from Person_Det import LABELS_PATH
+class ProductivityApp:
+    def __init__(self, host="127.0.0.1", port=2102):
+        self.app = Flask(__name__)
+        self.host = host
+        self.port = port
+        self.staff_credentials = {
+            "admin": "password123",
+            "user1": "mypassword",
+            "flex1": "flex1pass"
+        }
 
-app = Flask(__name__)
+        # Paths to the model files
+        self.frozen_graph_path = "frozen_inference_graph.pb"
+        self.config_path = "ssd_mobilenet_v3_large_coco_2020_01_14.pbtxt"
+        self.labels_path = "coco.names"
 
-# Enable auto-reloading of templates
-app.config['TEMPLATES_AUTO_RELOAD'] = True
+        self.labels = self.load_labels(self.labels_path)
+        self.net = self.load_model()
 
-# Hardcoded credentials for demonstration
-STAFF_CREDENTIALS = {
-    "admin": "password123",
-    "user1": "mypassword",
-    "flex1": "flex1pass"
-}
+        # Define Flask routes
+        self.define_routes()
 
-#camera = cv2.VideoCapture(0)  # Initialize camera
+    def get_local_ip(self):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            s.close()
+            return local_ip
+        except Exception as e:
+            print(f"Error getting local IP: {e}")
+            return "127.0.0.1"
 
-# Path to the model files
-FROZEN_GRAPH_PATH = "frozen_inference_graph.pb"
-CONFIG_PATH = "ssd_mobilenet_v3_large_coco_2020_01_14.pbtxt"
-LABELS_PATH = "coco.names"
+    def load_labels(self, label_path):
+        if not os.path.exists(label_path):
+            raise FileNotFoundError(f"Labels file not found: {label_path}")
+        with open(label_path, 'r') as file:
+            labels = {i: line.strip() for i, line in enumerate(file.readlines())}
+        return labels
 
-# Validate paths
-if not os.path.exists(FROZEN_GRAPH_PATH):
-    raise FileNotFoundError(f"Model file not found: {FROZEN_GRAPH_PATH}")
-if not os.path.exists(CONFIG_PATH):
-    raise FileNotFoundError(f"Config file not found: {CONFIG_PATH}")
-if not os.path.exists(LABELS_PATH):
-    raise FileNotFoundError(f"Labels file not found: {LABELS_PATH}")
+    def load_model(self):
+        if not os.path.exists(self.frozen_graph_path):
+            raise FileNotFoundError(f"Model file not found: {self.frozen_graph_path}")
+        if not os.path.exists(self.config_path):
+            raise FileNotFoundError(f"Config file not found: {self.config_path}")
+        net = cv2.dnn_DetectionModel(self.frozen_graph_path, self.config_path)
+        net.setInputSize(300, 300)
+        net.setInputScale(1.0 / 127.5)
+        net.setInputMean((127.5, 127.5, 127.5))
+        net.setInputSwapRB(True)
+        return net
 
+    def define_routes(self):
+        @self.app.route('/')
+        def index():
+            return redirect(url_for('login'))
 
-# Load class labels
-def load_labels(label_path):
-   with open(label_path, 'r') as file:
-       labels = {i: line.strip() for i, line in enumerate(file.readlines())}
-   return labels
+        @self.app.route('/login', methods=['GET', 'POST'])
+        def login():
+            if request.method == 'POST':
+                staff_id = request.form['staff_id']
+                password = request.form['password']
+                if staff_id in self.staff_credentials and self.staff_credentials[staff_id] == password:
+                    return redirect(url_for('dashboard'))
+                else:
+                    return "Invalid Staff ID or Password", 403
+            return render_template('login.html')
 
-labels = load_labels(LABELS_PATH)
+        @self.app.route('/dashboard')
+        def dashboard():
+            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            return render_template('dashboard.html', time=current_time)
 
-# Load the model 
-net = cv2.dnn_DetectionModel(FROZEN_GRAPH_PATH, CONFIG_PATH)
-net.setInputSize(300, 300)
-net.setInputScale(1.0 / 127.5)
-net.setInputMean((127.5, 127.5, 127.5))
-net.setInputSwapRB(True)
+        @self.app.route('/productivity')
+        def productivity():
+            return render_template('productivity.html')
 
-@app.route('/')
-def index():
-    #print("Index route called")
-    #return render_template('index.html')  # Renders the welcome page
-    return redirect(url_for('login')) # Automatically redirect to the login page
+        @self.app.route('/logout')
+        def logout():
+            return redirect(url_for('login'))
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        staff_id = request.form['staff_id']
-        password = request.form['password']
-        if staff_id in STAFF_CREDENTIALS and STAFF_CREDENTIALS[staff_id] == password:
-            return redirect(url_for('dashboard'))
-        else:
-            return "Invalid Staff ID or Password", 403
-    return render_template('login.html')
+        @self.app.route('/video_feed_laptop')
+        def video_feed_external():
+            return Response(self.generate_person_detection_frames(camera_id=0), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-@app.route('/dashboard')
-def dashboard():
-    #from datetime import datetime
-    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S') # Format the current time
-    return render_template('dashboard.html', time=current_time) # Pass time to the template
+        @self.app.route('/video_feed_webcam')
+        def video_feed_webcam():
+            return Response(self.generate_standard_frames(camera_id=1), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-@app.route('/productivity')
-def productivity():
-    return render_template('productivity.html')
+        @self.app.route('/video_feed_epoccam')
+        def video_feed_epoccam():
+            return Response(self.generate_standard_frames(camera_id=2), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-@app.route('/logout')
-def logout():
-    return redirect(url_for('login'))
-
-@app.route('/video_feed_laptop')
-def video_feed_external():
-    # Route for the laptop camera
-    return Response(generate_person_detection_frames(camera_id=0), mimetype='multipart/x-mixed-replace; boundary=frame')
-
-@app.route('/video_feed_webcam')
-def video_feed_webcam():
-    # Route for the webcam
-    return Response(generate_standard_frames(camera_id=1), mimetype='multipart/x-mixed-replace; boundary=frame')
-
-@app.route('/video_feed_epoccam')
-def video_feed_epoccam():
-    return Response(generate_standard_frames(camera_id=2), mimetype='multipart/x-mixed-replace; boundary=frame')
-
-def generate_person_detection_frames(camera_id=0):
-    try:
-       camera = cv2.VideoCapture(camera_id)
-       if not camera.isOpened():
-        print(f"Camera {camera_id} is not available, showing black frame.")
-        #raise RuntimeError(f"Could not open camera {camera_id}")
-
-        while True:
-          black_frame = np.zeros((480, 640, 3), dtype=np.uint8) # Black frame with 480p resolution
-          _, buffer = cv2.imencode('.jpg', black_frame)
-          frame = buffer.tobytes()
-          yield (b'--frame\r\n'
-                 b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-        
-       while True:
-            success, frame = camera.read()
-            if not success or frame is None:
-              print(f"Invalid frame from camera {camera_id}, skipping...")
-              continue
-
-            frame = cv2.resize(frame, (640, 480))
-
-            # Detect objects in the frame
-            class_ids, confidences, boxes = net.detect(frame, confThreshold=0.6) 
-
-            # Draw bounding boxes and labels
-            for class_id, confidence, box in zip(class_ids.flatten(), confidences.flatten(), boxes):
-                if class_id == 1:  # Class ID 1 corresponds to "person"
-                    label = f"{labels[class_id]}: {confidence:.2f}"
-                    x, y, w, h = box
-                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                    cv2.putText(frame, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-
-            # Encode the frame for display
-            if frame is not None and isinstance(frame, np.ndarray):
+    def generate_person_detection_frames(self, camera_id=0):
+        try:
+            camera = cv2.VideoCapture(camera_id)
+            if not camera.isOpened():
+                print(f"Camera {camera_id} is not available, showing black frame.")
+                while True:
+                    black_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+                    _, buffer = cv2.imencode('.jpg', black_frame)
+                    frame = buffer.tobytes()
+                    yield (b'--frame\r\n'
+                           b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+            while True:
+                success, frame = camera.read()
+                if not success:
+                    continue
+                frame = cv2.resize(frame, (640, 480))
+                class_ids, confidences, boxes = self.net.detect(frame, confThreshold=0.6)
+                for class_id, confidence, box in zip(class_ids.flatten(), confidences.flatten(), boxes):
+                    if class_id == 1:
+                        label = f"{self.labels[class_id]}: {confidence:.2f}"
+                        x, y, w, h = box
+                        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                        cv2.putText(frame, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
                 _, buffer = cv2.imencode('.jpg', frame)
                 frame = buffer.tobytes()
                 yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')  
-            else:
-                print("Skipped encoding invalid frame.")
-                time.sleep(0.03) 
-    except Exception as e:
-         print(f"Error with camera {camera_id}: {e}")
-    finally:
-         if 'camera' in locals() and camera.isOpened():
-             camera.release()
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+        finally:
+            if 'camera' in locals() and camera.isOpened():
+                camera.release()
 
-def generate_standard_frames(camera_id=0):
-    try:
-        camera = cv2.VideoCapture(camera_id)
-        if not camera.isOpened():
-            print(f"Camera {camera_id} is not available.")
+    def generate_standard_frames(self, camera_id=0):
+        try:
+            camera = cv2.VideoCapture(camera_id)
+            if not camera.isOpened():
+                print(f"Camera {camera_id} is not available.")
+                while True:
+                    black_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+                    _, buffer = cv2.imencode('.jpg', black_frame)
+                    frame = buffer.tobytes()
+                    yield (b'--frame\r\n'
+                           b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
             while True:
-                black_frame = np.zeros((480, 640, 3), dtype=np.uint8)
-                _, buffer = cv2.imencode('.jpg', black_frame)
+                success, frame = camera.read()
+                if not success:
+                    break
+                _, buffer = cv2.imencode('.jpg', frame)
                 frame = buffer.tobytes()
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-        while True:
-            success, frame = camera.read()
-            if not success:
-                break
+        finally:
+            if 'camera' in locals() and camera.isOpened():
+                camera.release()
 
-            _, buffer = cv2.imencode('.jpg', frame)
-            frame = buffer.tobytes()
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-    except Exception as e:
-        print(f"Error with camera {camera_id}: {e}")
-    finally:
-        if 'camera' in locals() and camera.isOpened():
-            camera.release()
-                   
+    def open_browser(self):
+        """Automatically open the browser when the app starts."""
+        url = f"http://{self.host}:{self.port}"
+        webbrowser.open_new(url)
 
-
-# Open browser automatically after server starts
-def open_browser():
-    webbrowser.open_new("http://127.0.0.1:2102")
-
-#print("Before starting Flask app")
-if __name__ == '__main__':
-      # Debug: Check avalibale cameras
-      print("Checking available cameras...")
-      index = 0
-      while True:
-          cap = cv2.VideoCapture(index)
-          if not cap.read()[0]:
-              break
-          else:
-              print(f"Camera {index} is available.")
-          cap.release()
-          index += 1
-      Timer(1, open_browser).start() # Open the browser after 1 second
-      print("Starting Flask server...")
-      app.run(debug=True, port=2102)
-      print("Flask server started")
+    def run(self, **kwargs):
+        """Run the app and open the browser after a brief delay."""
+        print(f"Starting app on http://{self.host}:{self.port}")
+        # Use a Timer to open the browser 1 second after the app starts
+        Timer(1, self.open_browser).start()
+        self.app.run(debug=True, host=self.host, port=self.port, **kwargs)

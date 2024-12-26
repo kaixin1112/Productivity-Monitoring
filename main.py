@@ -4,6 +4,8 @@ import socket
 from cam import CAM_ROI
 import os, ast
 import json
+from app import ProductivityApp
+import threading
 
 def get_ip_address():
     """Retrieve the IP address of the laptop."""
@@ -57,11 +59,26 @@ def main_page():
         fg="white"
     ).pack(pady=20)
 
+
+# Inside the operator_page function
 def operator_page():
     """Render the operator page."""
     clear_frame()
+
+    # Define a function to run the Flask app in a separate thread
+    def run_flask_app():
+        local_ip = ProductivityApp().get_local_ip()
+        app = ProductivityApp(host=local_ip, port=2102)
+        app.run(use_reloader=False)  # Pass use_reloader to the inner Flask app's run
+
+    # Start Flask app in a separate thread
+    flask_thread = threading.Thread(target=run_flask_app, daemon=True)
+    flask_thread.start()
+
+    # Render Operator Page UI
     tk.Label(root, text="Operator Page", font=("Arial", 30), bg="lightgray").pack(pady=50)
     tk.Button(root, text="Back", font=("Arial", 20), command=main_page, bg="gray", fg="white").pack()
+
 
 def engineer_page():
     """Render the engineer page with login functionality."""
