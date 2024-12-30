@@ -107,7 +107,7 @@ class ProductivityApp:
 
     global cameras
     # Initialize global cameras at the start of the app
-    cameras = {0: cv2.VideoCapture(0), 1: cv2.VideoCapture(1), 2: cv2.VideoCapture(2)}
+    cameras = {0: cv2.VideoCapture(0), 1: cv2.VideoCapture(1), 3: cv2.VideoCapture(3)}
 
     def generate_frames(self, camera_id):
         camera = cameras.get(camera_id)
