@@ -48,10 +48,11 @@
 </head>
 <body>
 
-    <!--Navigation Menu -->
+    <!-- Navigation Menu -->
     <div class="menu">
         <a href="/dashboard">Dashboard</a>
-        <a href="/productivity">Others</a>
+        <a href="#" id="stepsLink">Steps</a> <!-- Steps Navigation -->
+        <a href="/productivity">Productivity Monitoring</a>
         <a href="/logout">Logout</a>
     </div>
 
@@ -96,6 +97,15 @@
     <!-- Display the time below the camera feed -->
     <!--h2>Current Time</h2-->
     <!--p><span id="dynamic-time">{{ time }}</span></p-->
+
+    <script>
+        // Open Steps page as a modal in a new tab
+        document.getElementById("stepsLink").onclick = function(event) {
+            event.preventDefault(); // Prevent default link navigation
+            window.open("/steps", "_blank", "width=800,height=600"); // Open a new tab with specific dimensions
+        };
+    </script>
+
 
 </body>
 </html>

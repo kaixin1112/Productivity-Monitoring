@@ -91,69 +91,34 @@ class ProductivityApp:
 
         @self.app.route('/video_feed_laptop')
         def video_feed_external():
-            return Response(self.generate_person_detection_frames(camera_id=0), mimetype='multipart/x-mixed-replace; boundary=frame')
+            return Response(self.generate_frames(camera_id=0), mimetype='multipart/x-mixed-replace; boundary=frame')
 
         @self.app.route('/video_feed_webcam')
         def video_feed_webcam():
-            return Response(self.generate_standard_frames(camera_id=1), mimetype='multipart/x-mixed-replace; boundary=frame')
+            return Response(self.generate_frames(camera_id=1), mimetype='multipart/x-mixed-replace; boundary=frame')
 
         @self.app.route('/video_feed_epoccam')
         def video_feed_epoccam():
-            return Response(self.generate_standard_frames(camera_id=2), mimetype='multipart/x-mixed-replace; boundary=frame')
+            return Response(self.generate_frames(camera_id=2), mimetype='multipart/x-mixed-replace; boundary=frame')
+        
+        @self.app.route("/steps")
+        def steps():
+            return render_template('steps.html')
 
-    def generate_person_detection_frames(self, camera_id=0):
-        try:
-            camera = cv2.VideoCapture(camera_id)
-            if not camera.isOpened():
-                print(f"Camera {camera_id} is not available, showing black frame.")
-                while True:
-                    black_frame = np.zeros((480, 640, 3), dtype=np.uint8)
-                    _, buffer = cv2.imencode('.jpg', black_frame)
-                    frame = buffer.tobytes()
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-            while True:
-                success, frame = camera.read()
-                if not success:
-                    continue
-                frame = cv2.resize(frame, (640, 480))
-                class_ids, confidences, boxes = self.net.detect(frame, confThreshold=0.6)
-                for class_id, confidence, box in zip(class_ids.flatten(), confidences.flatten(), boxes):
-                    if class_id == 1:
-                        label = f"{self.labels[class_id]}: {confidence:.2f}"
-                        x, y, w, h = box
-                        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                        cv2.putText(frame, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-                _, buffer = cv2.imencode('.jpg', frame)
-                frame = buffer.tobytes()
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-        finally:
-            if 'camera' in locals() and camera.isOpened():
-                camera.release()
+    global cameras
+    # Initialize global cameras at the start of the app
+    cameras = {0: cv2.VideoCapture(0), 1: cv2.VideoCapture(1), 2: cv2.VideoCapture(2)}
 
-    def generate_standard_frames(self, camera_id=0):
-        try:
-            camera = cv2.VideoCapture(camera_id)
-            if not camera.isOpened():
-                print(f"Camera {camera_id} is not available.")
-                while True:
-                    black_frame = np.zeros((480, 640, 3), dtype=np.uint8)
-                    _, buffer = cv2.imencode('.jpg', black_frame)
-                    frame = buffer.tobytes()
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-            while True:
-                success, frame = camera.read()
-                if not success:
-                    break
-                _, buffer = cv2.imencode('.jpg', frame)
-                frame = buffer.tobytes()
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-        finally:
-            if 'camera' in locals() and camera.isOpened():
-                camera.release()
+    def generate_frames(self, camera_id):
+        camera = cameras.get(camera_id)
+        while True:
+            success, frame = camera.read()
+            if not success:
+                break
+            _, buffer = cv2.imencode('.jpg', frame)
+            frame = buffer.tobytes()
+            yield (b'--frame\r\n'
+                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
     def open_browser(self):
         """Automatically open the browser when the app starts."""
