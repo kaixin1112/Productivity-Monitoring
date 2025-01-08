@@ -7,15 +7,8 @@ class CAM_ROI:
         # Initialize camera
         self.cap = cv2.VideoCapture(self.index, cv2.CAP_DSHOW)
 
-        # Set video frame size
-        frame_width = 800
-        frame_height = 600
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, frame_width)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, frame_height)
-
         # Video frame configuration
         cv2.namedWindow('Video Frame', cv2.WINDOW_NORMAL)
-        cv2.resizeWindow('Video Frame', frame_width, frame_height)
 
         # Variables to manage ROIs
         self.rois = []  # List to store all ROIs

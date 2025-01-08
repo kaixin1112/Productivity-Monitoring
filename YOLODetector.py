@@ -123,10 +123,14 @@ class YOLODetector:
                                 roi_detections[idx + 1].append(obj)
                                 break
 
-                # Sort and send detections
+                # Process and send detections
                 for roi_index, detected_objects in roi_detections.items():
                     if detected_objects:
                         detected_objects.sort()
+                        if len(detected_objects) > 1:
+                            detected_objects = ', '.join(detected_objects)
+                        else:
+                            detected_objects = detected_objects[0]
                         queue.put({
                             "camera_index": camera_index,
                             "roi": roi_index,

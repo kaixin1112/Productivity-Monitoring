@@ -4,8 +4,10 @@ import socket
 from cam import CAM_ROI
 import os, ast
 import json
-from app import ProductivityApp
-import threading
+import cv2
+from deepface import DeepFace
+from PIL import Image, ImageTk
+import subprocess
 
 def get_ip_address():
     """Retrieve the IP address of the laptop."""
@@ -59,25 +61,153 @@ def main_page():
         fg="white"
     ).pack(pady=20)
 
+# Create a directory to store registered user images
+if not os.path.exists("registered_users"):
+    os.makedirs("registered_users")
 
-# Inside the operator_page function
+def run_script_thread():
+    import threading
+    def run_script():
+        # Use subprocess to chain commands in CMD
+        cmd = "D: && cd D:/Ching/Documents/Demo/Productivity-Monitoring && python finally.py"
+        subprocess.run(cmd, shell=True)
+    threading.Thread(target=run_script).start()
+
+# Dummy database for storing user IDs and their image file paths
+database = {}
+
+# Load registered users into the database
+def load_registered_users():
+    for file_name in os.listdir("registered_users"):
+        if file_name.endswith(".jpg"):
+            user_id = file_name.split(".")[0]
+            database[user_id] = os.path.join("registered_users", file_name)
+
+load_registered_users()
+
+def add_user(user_id, frame):
+    # Save the user's picture
+    file_path = os.path.join("registered_users", f"{user_id}.jpg")
+    cv2.imwrite(file_path, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+    database[user_id] = file_path
+
+def authorize_and_register(user_id_entry, cap):
+    auth_window = tk.Toplevel(root)
+    auth_window.title("Authorization")
+    auth_window.geometry("400x200")
+
+    tk.Label(auth_window, text="Enter Username:", font=("Arial", 15)).pack(pady=5)
+    username_entry = tk.Entry(auth_window, font=("Arial", 15))
+    username_entry.pack(pady=5)
+
+    tk.Label(auth_window, text="Enter Password:", font=("Arial", 15)).pack(pady=5)
+    password_entry = tk.Entry(auth_window, font=("Arial", 15), show="*")
+    password_entry.pack(pady=5)
+
+    def verify_credentials():
+        username = username_entry.get()
+        password = password_entry.get()
+        if username == "admin" and password == "password":  # Replace with secure authentication
+            auth_window.destroy()
+            capture_and_register(user_id_entry, cap)
+        else:
+            messagebox.showerror("Error", "Invalid credentials.")
+
+    tk.Button(auth_window, text="Submit", font=("Arial", 15), command=verify_credentials).pack(pady=10)
+
+def capture_and_register(user_id_entry, cap):
+    user_id = user_id_entry.get()
+    if not user_id:
+        messagebox.showerror("Error", "Please enter a User ID.")
+        return
+
+    ret, frame = cap.read()
+    if not ret:
+        messagebox.showerror("Error", "Failed to capture frame from camera.")
+        return
+
+    frame = cv2.flip(frame, 1)  # Flip the frame horizontally
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    add_user(user_id, rgb_frame)
+    messagebox.showinfo("Success", f"User {user_id} registered successfully.")
+
+def capture_and_login(user_id_entry, cap):
+    user_id = user_id_entry.get()
+    if not user_id:
+        messagebox.showerror("Error", "Please enter a User ID.")
+        return
+
+    ret, frame = cap.read()
+    if not ret:
+        messagebox.showerror("Error", "Failed to capture frame from camera.")
+        return
+
+    frame = cv2.flip(frame, 1)  # Flip the frame horizontally
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+    if user_id in database:
+        file_path = database[user_id]
+        result = DeepFace.verify(img1_path=file_path, img2_path=rgb_frame, enforce_detection=False)
+        if result["verified"]:
+            cap.release()
+            clear_frame()
+            tk.Label(root, text=f"Login Successful: {user_id}", font=("Arial", 30), bg="lightgreen").pack(pady=20)
+
+            # Close application after 3 seconds and run the script
+            def close_and_run():
+                root.quit()  # Stops the Tkinter event loop
+                root.destroy()  # Closes the Tkinter window
+                run_script_thread()
+
+            root.after(3000, close_and_run)
+            return
+
+    cap.release()
+    clear_frame()
+    tk.Label(root, text=f"Invalid User: {user_id}", font=("Arial", 30), bg="lightcoral").pack(pady=20)
+    tk.Button(root, text="Return to Main Page", font=("Arial", 20), command=main_page, bg="gray", fg="white").pack(pady=20)
+
+def update_video_frame(video_label, cap):
+    ret, frame = cap.read()
+    if ret:
+        frame = cv2.flip(frame, 1)  # Flip the frame horizontally
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        img = Image.fromarray(rgb_frame)
+        imgtk = ImageTk.PhotoImage(image=img)
+        video_label.imgtk = imgtk
+        video_label.configure(image=imgtk)
+    video_label.after(10, update_video_frame, video_label, cap)
+
 def operator_page():
-    """Render the operator page."""
     clear_frame()
 
-    # Define a function to run the Flask app in a separate thread
-    def run_flask_app():
-        local_ip = ProductivityApp().get_local_ip()
-        app = ProductivityApp(host=local_ip, port=2102)
-        app.run(use_reloader=False)  # Pass use_reloader to the inner Flask app's run
+    tk.Label(root, text="Operator Page", font=("Arial", 30), bg="lightgray").pack(pady=10)
 
-    # Start Flask app in a separate thread
-    flask_thread = threading.Thread(target=run_flask_app, daemon=True)
-    flask_thread.start()
+    frame = tk.Frame(root)
+    frame.pack(pady=10)
 
-    # Render Operator Page UI
-    tk.Label(root, text="Operator Page", font=("Arial", 30), bg="lightgray").pack(pady=50)
-    tk.Button(root, text="Back", font=("Arial", 20), command=main_page, bg="gray", fg="white").pack()
+    tk.Label(frame, text="User ID: ", font=("Arial", 15)).grid(row=0, column=0, padx=5)
+    user_id_entry = tk.Entry(frame, font=("Arial", 15))
+    user_id_entry.grid(row=0, column=1, padx=5)
+
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+
+    video_label = tk.Label(root)
+    video_label.pack(pady=20)
+
+    update_video_frame(video_label, cap)
+
+    tk.Button(frame, text="Register", font=("Arial", 15), command=lambda: authorize_and_register(user_id_entry, cap)).grid(row=0, column=2, padx=5)
+    tk.Button(frame, text="Login", font=("Arial", 15), command=lambda: capture_and_login(user_id_entry, cap)).grid(row=0, column=3, padx=5)
+
+    def on_closing():
+        cap.release()
+        cv2.destroyAllWindows()
+        root.destroy()
+
+    root.protocol("WM_DELETE_WINDOW", on_closing)
+
+    tk.Button(root, text="Back", font=("Arial", 20), command=lambda: [cap.release(), main_page()], bg="gray", fg="white").pack(pady=20)
 
 
 def engineer_page():
@@ -108,6 +238,7 @@ def engineer_page():
 def engineer_dashboard():
     clear_frame()
 
+
     def load_existing_data():
         """Load data from a JSON file and populate the rows."""
         file_path = "camera_data.json"
@@ -126,9 +257,32 @@ def engineer_dashboard():
         # Populate rows with loaded data
         for row_index, (row_id, settings) in enumerate(data.items()):
             add_row()
-            rows[row_index][1].set(settings.get("Camera ID", ""))
-            rows[row_index][2].set(settings.get("Camera Type", "USB Camera"))
-            rows[row_index][3].set(settings.get("Technique", "Pose Estimation"))
+            camera_id = str(settings.get("Camera ID", "0"))  # Ensure Camera ID is a string
+            camera_type = settings.get("Camera Type", "USB Camera")
+            technique = settings.get("Technique", "Pose Estimation")
+
+            # Set the Camera Type, Camera ID, and Technique
+            rows[row_index][2].set(camera_type)  # Set Camera Type
+            rows[row_index][3].set(technique)   # Set Technique
+
+            # Make sure the camera_id is correctly set in the OptionMenu
+            camera_id_var = rows[row_index][1]
+            camera_id_var.set(camera_id)  # Set the Camera ID to the correct value
+
+            # Get the camera_id_menu (which is the OptionMenu)
+            camera_id_menu = rows[row_index][6]
+            menu = camera_id_menu["menu"]
+            
+            # Update the camera_id_menu based on camera type
+            if camera_type == "USB Camera":
+                # Update the camera_id_menu with camera IDs from 0 to 7 (or whatever range you want)
+                menu.delete(0, "end")  # Clear previous options
+                for i in range(8):  # Set camera ID options
+                    menu.add_command(label=str(i), command=lambda value=str(i): camera_id_var.set(value))
+            elif camera_type == "IP Address":
+                # Set an IP address value (you might want to handle this differently)
+                camera_id_var.set(settings.get("Camera ID", ""))
+
 
     def access_camera(row_index):
         """Access the camera based on user input."""
@@ -184,11 +338,14 @@ def engineer_dashboard():
         if data.get("ID_1", {}).get("Camera ID", ""):
             with open(file_path, "w") as f:
                 json.dump(data, f, indent=4)
-            messagebox.showinfo("Data Saved", "Camera settings have been saved to 'camera_data.json'")
 
     def add_row():
-        """Add a new row of input widgets."""
+        """Add a new row of input widgets, limited to 3 rows."""
         row = len(rows)
+
+        if len(rows) >= 3:
+            messagebox.showwarning("Limit Reached", "You can only add up to 3 rows.")
+            return
 
         row_frame = tk.Frame(settings_frame, bg=app_bg, padx=5, pady=5, relief=tk.GROOVE, borderwidth=2)
         row_frame.grid(row=row, column=0, columnspan=5, pady=5, sticky="nsew")
@@ -209,7 +366,7 @@ def engineer_dashboard():
         camera_menu.config(font=("Arial", 12), width=15)
         camera_menu.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
-        # Camera ID (Default to USB Camera with dropdown)
+        # Camera ID (Initially set to 0, will be updated dynamically)
         camera_id_var = tk.StringVar(value="0")
         camera_id_menu = tk.OptionMenu(row_frame, camera_id_var, *[str(i) for i in range(8)])
         camera_id_menu.config(font=("Arial", 12), width=15)
@@ -271,7 +428,8 @@ def engineer_dashboard():
         access_button.grid(row=1, column=0, columnspan=5, padx=5, pady=5, sticky="nsew")
 
         # Append all widgets and variables for the row to the rows list
-        rows.append([row_frame, camera_id_var, camera_var, technique_var, file_path_var, access_button])
+        rows.append([row_frame, camera_id_var, camera_var, technique_var, file_path_var, access_button, camera_id_menu])
+
 
     def choose_file(file_path_var):
         """Open a file selection dialog."""
@@ -413,6 +571,37 @@ def engineer_dashboard():
             return {}
 
 
+    def load_steps_data():
+        """Load steps data from steps_data.json and populate the rows."""
+        global rows_1
+        try:
+            with open("steps_data.json", "r") as file:
+                steps_data = json.load(file)  # Load JSON data
+                print(f"Loaded steps data: {steps_data}")  # Debugging
+
+            # Clear any existing rows
+            for row in rows_1:
+                row[0].destroy()  # Destroy the frame and its widgets
+            rows_1.clear()
+
+            # Populate rows with data
+            for step in steps_data:
+                add_row_1()  # Add a new empty row
+                row = rows_1[-1]  # Get the last row added
+
+                # Populate each input field with data
+                row[1].set(step.get("Camera", ""))  # Camera Dropdown
+                row[2].set(step.get("ROI", ""))     # ROI Dropdown
+                row[3].insert(0, step.get("Object", ""))  # Object Input
+
+        except FileNotFoundError:
+            print("steps_data.json not found. Skipping load.")
+        except json.JSONDecodeError:
+            messagebox.showerror("Error", "Invalid JSON format in steps_data.json.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error while loading steps data: {e}")
+
+
     def get_roi_cam_length(camera_id):
         """Retrieve the length of the ROI_CAM list."""
         filename = f"ROI_CAM_{camera_id}.txt"
@@ -444,7 +633,7 @@ def engineer_dashboard():
 
 
     def add_row_1():
-        """Add a new row to the settings frame."""
+        """Add a new row to the settings frame with a more systematic layout and longer text boxes for ✓ and X Msg."""
         global rows_1
         row1 = []
 
@@ -455,73 +644,75 @@ def engineer_dashboard():
         # Configure settings_frame and row_frame to expand
         settings_frame.grid_columnconfigure(0, weight=1)  # Allow row_frame to stretch
         row_frame.grid_columnconfigure(0, weight=1)  # Step label
-        row_frame.grid_columnconfigure(1, weight=2)  # Camera ID Dropdown
-        row_frame.grid_columnconfigure(2, weight=2)  # ROI Dropdown
-        row_frame.grid_columnconfigure(3, weight=2)  # Object Input
-        row_frame.grid_columnconfigure(4, weight=4)  # Msg fields (✓ & X)
+        row_frame.grid_columnconfigure(1, weight=1)  # Labels
+        row_frame.grid_columnconfigure(2, weight=2)  # Input fields
+        row_frame.grid_columnconfigure(3, weight=1)  # Labels
+        row_frame.grid_columnconfigure(4, weight=4)  # Input fields (longer ✓ and X Msg)
 
         # Step Label
         step_label = tk.Label(row_frame, text=f"Step {len(rows_1) + 1}:", font=("Arial", 12, "bold"), bg="skyblue")
         step_label.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
         row1.append(row_frame)  # Keep frame for removal later
-        row1.append(step_label)
 
         # Camera ID Dropdown
+        tk.Label(row_frame, text="Camera:", font=("Arial", 12, "bold"), bg="skyblue").grid(row=0, column=1, sticky="e")
         cam_var = tk.StringVar(value="Select Camera")
         cam_dropdown = ttk.Combobox(row_frame, textvariable=cam_var, font=("Arial", 12), state="readonly")
+        cam_dropdown.grid(row=0, column=2, padx=5, pady=5, sticky="ew")
+        row1.append(cam_var)
 
         # Reload camera data dynamically
         global camera_data
         camera_data = load_camera_data()
-        camera_indexs = [camera_data[cid]["Camera ID"] for cid in camera_ids]
-        cam_dropdown['values'] = camera_indexs
-        cam_dropdown.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        camera_indexs = [camera_data[cid]["Camera ID"] for cid in camera_data.keys()]  # Get camera IDs from JSON
+        cam_dropdown['values'] = camera_indexs  # Populate dropdown with camera IDs
 
-        # ROI Dropdown (to be dynamically updated)
+        # ROI Dropdown
+        tk.Label(row_frame, text="ROI:", font=("Arial", 12, "bold"), bg="skyblue").grid(row=0, column=3, sticky="e")
         roi_var = tk.StringVar(value="Select ROI")
-        roi_dropdown = ttk.Combobox(row_frame, textvariable=roi_var, font=("Arial", 12))
-        roi_dropdown.grid(row=0, column=2, padx=5, pady=5, sticky="ew")
-        row1.append(roi_dropdown)
+        roi_dropdown = ttk.Combobox(row_frame, textvariable=roi_var, font=("Arial", 12), state="readonly")
+        roi_dropdown.grid(row=0, column=4, padx=5, pady=5, sticky="ew")
+        row1.append(roi_var)
 
         # Update ROI dropdown based on Camera ID selection
         def update_roi_dropdown(event=None):
-            selected_cam = cam_var.get()  # Get the selected camera
+            selected_cam = cam_var.get()  # Get the selected camera ID
             if selected_cam:
-                roi_length = get_roi_cam_length(selected_cam)  # Get ROI_CAM length
-                roi_list = [f"ROI {i}" for i in range(1, roi_length + 1)]  # Generate ROI list
-                roi_dropdown['values'] = roi_list  # Update dropdown values
-                roi_var.set("Select ROI")  # Reset dropdown display
+                # Try loading ROI_CAM_<index>.txt
+                roi_filename = f"ROI_CAM_{selected_cam}.txt"
+                try:
+                    roi_length = get_roi_cam_length(selected_cam)  # Retrieve the length of ROI_CAM list
+                    roi_list = [f"ROI {i}" for i in range(1, roi_length + 1)]  # Generate ROI options
+                    roi_dropdown['values'] = roi_list  # Update dropdown values
+                    roi_var.set("Select ROI")  # Reset dropdown display
+                except FileNotFoundError:
+                    print(f"{roi_filename} not found. Leaving ROI dropdown blank.")
+                    roi_dropdown['values'] = []  # Leave blank if file is not found
+                    roi_var.set("Select ROI")
+                except Exception as e:
+                    print(f"Error reading {roi_filename}: {e}")
+                    roi_dropdown['values'] = []  # Handle unexpected errors
+                    roi_var.set("Select ROI")
             else:
                 roi_dropdown['values'] = []  # Clear values if no camera is selected
+                roi_var.set("Select ROI")
 
-
+        # Bind the selection event to update ROI dropdown
         cam_dropdown.bind("<<ComboboxSelected>>", update_roi_dropdown)
 
-        # Object input
+        # Object Input
+        tk.Label(row_frame, text="Object:", font=("Arial", 12, "bold"), bg="skyblue").grid(row=1, column=1, sticky="e")
         obj_entry = tk.Entry(row_frame, font=("Arial", 12))
-        obj_entry.grid(row=0, column=3, padx=5, pady=5, sticky="ew")
+        obj_entry.grid(row=1, column=2, padx=5, pady=5, sticky="ew")
         row1.append(obj_entry)
 
-        # ✓ Msg Label and Text Box
-        check_label = tk.Label(row_frame, text="✓ Msg:", font=("Arial", 12, "bold"), bg="skyblue")
-        check_label.grid(row=1, column=0, padx=5, pady=5, sticky="w")
-
-        check_text = tk.Entry(row_frame, font=("Arial", 12))
-        check_text.grid(row=1, column=1, columnspan=4, padx=5, pady=5, sticky="ew")
-        row1.append(check_text)
-
-        # X Msg Label and Text Box
-        cancel_label = tk.Label(row_frame, text="X Msg:", font=("Arial", 12, "bold"), bg="skyblue")
-        cancel_label.grid(row=2, column=0, padx=5, pady=(0, 5), sticky="w")
-
-        cancel_text = tk.Entry(row_frame, font=("Arial", 12))
-        cancel_text.grid(row=2, column=1, columnspan=4, padx=5, pady=(0, 5), sticky="ew")
-        row1.append(cancel_text)
-
+        # Append the row to rows_1
         rows_1.append(row1)
 
         # Trigger canvas size update
         settings_frame.update_idletasks()
+        print(f"Row {len(rows_1)} added: {row1}")  # Debugging
+
 
 
     def remove_row_1():
@@ -539,46 +730,41 @@ def engineer_dashboard():
         global rows_1
         settings_data = []
 
-        for row in rows_1:
+        for idx, row in enumerate(rows_1):
             try:
-                # Ensure all fields have valid data
-                if len(row) < 7:  # Ensure row has all expected widgets
-                    continue
+                # Debug: Print row structure
+                print(f"Row {idx + 1} structure: {row}")
 
-                camera_value = row[2].get().strip()
-                roi_value = row[3].get().strip()
-                object_value = row[4].get().strip()
-                check_msg_value = row[5].get().strip()
-                cancel_msg_value = row[6].get().strip()
+                # Retrieve widget values
+                camera_value = row[1].get().strip()  # Camera Dropdown Variable
+                roi_value = row[2].get().strip()     # ROI Dropdown Variable
+                object_value = row[3].get().strip()  # Object Input
 
-                # Skip rows with empty critical fields (Camera, ROI, or Object)
-                if not (camera_value or roi_value or object_value or check_msg_value or cancel_msg_value):
-                    continue
+                # Debug collected values
+                print(f"Row {idx + 1} collected values:")
+                print(f"Camera: {camera_value}, ROI: {roi_value}, Object: {object_value}")
 
-                # Add row data to the list if it's valid
+                # Append valid row data
                 row_data = {
                     "Camera": camera_value,
                     "ROI": roi_value,
-                    "Object": object_value,
-                    "Check Msg": check_msg_value,
-                    "Cancel Msg": cancel_msg_value,
+                    "Object": object_value
                 }
                 settings_data.append(row_data)
             except Exception as e:
-                messagebox.showerror("Error", f"Error while reading row data: {e}")
+                messagebox.showerror("Error", f"Error while processing row {idx + 1}: {e}")
                 return
 
-        # Check if settings_data is empty
-        if not settings_data:
-            return  # Skip saving process entirely
-
-        # Save valid data to the JSON file
-        try:
-            with open("steps_data.json", "w") as file:
-                json.dump(settings_data, file, indent=4)  # Pretty-print with indentation
-            messagebox.showinfo("Success", "Steps have been saved successfully!")
-        except Exception as e:
-            messagebox.showerror("Error", f"Error saving settings: {e}")
+        # Save data to JSON if valid rows exist
+        if settings_data:
+            try:
+                with open("steps_data.json", "w") as file:
+                    json.dump(settings_data, file, indent=4)
+            except Exception as e:
+                messagebox.showerror("Error", f"Error saving settings: {e}")
+        else:
+            print("No valid data to save!")
+            messagebox.showwarning("No Data", "No valid data to save!")
 
 
     # From Access Step back to Main Page
@@ -619,7 +805,7 @@ def engineer_dashboard():
             font=("Arial", 14, "bold"), 
             bg="lightcoral", 
             activebackground="red", 
-            command=main_page
+            command=return_main
         )
         return_button.pack(side="right", padx=10)
 
@@ -667,6 +853,7 @@ def engineer_dashboard():
         global rows_1
         rows_1 = []
         add_row_1()
+        load_steps_data()
         update_scroll_region()
 
         # Button Frame (outside the scrollable settings_frame)
