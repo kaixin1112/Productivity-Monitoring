@@ -1,9 +1,10 @@
 import tkinter as tk
 from tkinter import ttk, Button
 import multiprocessing
+from multiprocessing import Event
+from ultralytics import YOLO
 import cv2
 import json
-from ultralytics import YOLO
 from YOLODetector import YOLODetector
 from PersonDetector import PersonDetector
 import numpy as np
@@ -29,21 +30,22 @@ def populate_global_steps(steps_data):
         global_steps[idx] = [camera_index, roi, obj]
     return global_steps
 
-def run_person_detector(camera_index, queue):
+def run_person_detector(camera_index, queue, terminate_flag):
     """Standalone function for Person Detection."""
     detector = PersonDetector()
     detector.run(camera_index, queue)
 
-def run_yolo_detector(model_path, camera_index, queue):
+def run_yolo_detector(model_path, camera_index, queue, terminate_flag):
     """Standalone function for YOLO Detection."""
     detector = YOLODetector(model_path)
-    detector.run(camera_index=camera_index, threshold=0.6, queue=queue)
+    detector.run(camera_index=camera_index, threshold=0.6, queue=queue, terminate_flag=terminate_flag)
 
-def process_queues(global_steps, person_queue, yolo_queue, result_queue):
+def process_queues(global_steps, person_queue, yolo_queue, result_queue, terminate_flag):
     """Processes queues to validate detections and handle step completions."""
     current_step = 1
+    false_object_detected = False  # Tracks if a false object is currently detected
 
-    while current_step <= len(global_steps):
+    while current_step <= len(global_steps) and not terminate_flag.is_set():
         # Get the expected details for the current step
         expected_camera_index, expected_roi, expected_object = global_steps[current_step]
 
@@ -65,13 +67,40 @@ def process_queues(global_steps, person_queue, yolo_queue, result_queue):
                 current_step += 1
                 continue
 
-        # Validate detection from YOLODetector
+        # Handle empty YOLO object case
         if yolo_message:
+            # False object detected in ROI
             if (yolo_message["camera_index"] == expected_camera_index and
                 yolo_message["roi"] == expected_roi and
-                yolo_message["object"] == expected_object):
+                yolo_message["object"] != "" and
+                yolo_message["object"] != expected_object):
+
+                if not false_object_detected:  # Only send message once
+                    result_queue.put({
+                        "status": False,
+                        "message": f"{expected_object} should be in ROI {expected_roi}"
+                    })
+                    false_object_detected = True  # Mark false object as detected
+                continue
+
+            # False object has left the ROI
+            elif (yolo_message["camera_index"] == expected_camera_index and
+                yolo_message["roi"] == expected_roi and
+                yolo_message["object"] == None):
+                false_object_detected = False  # Reset false object detection
+                result_queue.put({
+                    "status": True,
+                    "message": ""  # Send an empty message to clear the error
+                })
+                continue
+
+            # Correct object detected
+            elif (yolo_message["camera_index"] == expected_camera_index and
+                  yolo_message["roi"] == expected_roi and
+                  yolo_message["object"] == expected_object):
                 result_queue.put(current_step)
                 current_step += 1
+                false_object_detected = False  # Reset false object detection
                 continue
 
 def analyze_photo(photo, model_path):
@@ -102,7 +131,7 @@ def analyze_photo(photo, model_path):
 
 def process_image(camera_index, model_path):
     """Capture and process an image from the specified camera."""
-    cap = cv2.VideoCapture(camera_index)
+    cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
     if not cap.isOpened():
         print(f"Error: Unable to access camera {camera_index}")
         return
@@ -165,6 +194,12 @@ class StepTrackingApp:
         for idx, (step, data) in enumerate(global_steps.items(), start=1):
             self.table.insert("", "end", iid=step, values=(data[0], data[1], data[2]))
 
+        self.message_box = tk.Label(root, text="", fg="red", wraplength=400, justify="left")
+        self.message_box.pack(pady=10)
+
+        # Create terminate flag
+        self.terminate_flag = Event()
+
         # Start camera processes
         self.start_camera_processes()
 
@@ -174,10 +209,10 @@ class StepTrackingApp:
             technique = cam_info["Technique"]
 
             if technique == "Person Detection":
-                process = multiprocessing.Process(target=run_person_detector, args=(camera_index, person_queue))
+                process = multiprocessing.Process(target=run_person_detector, args=(camera_index, person_queue, self.terminate_flag))
                 process.start()
             elif technique == "Object Detection (Vid)":
-                process = multiprocessing.Process(target=run_yolo_detector, args=(self.model_path, camera_index, yolo_queue))
+                process = multiprocessing.Process(target=run_yolo_detector, args=(self.model_path, camera_index, yolo_queue, self.terminate_flag))
                 process.start()
 
     def highlight_row(self, steps):
@@ -201,6 +236,9 @@ class StepTrackingApp:
         self.root.title("All Steps Completed")
         self.root.after(500, lambda: CaptureApp(self.camera_data, self.model_path))
 
+        # Terminate background processes
+        self.terminate_flag.set()
+
 class CaptureApp:
     def __init__(self, camera_data, model_path):
         self.camera_data = camera_data
@@ -215,7 +253,7 @@ class CaptureApp:
     def launch_camera_window(self):
         """Open OpenCV window with a capture button."""
         while True:
-            cap = cv2.VideoCapture(self.camera_index)
+            cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
 
             if not cap.isOpened():
                 print("Error: Unable to access camera.")
@@ -252,7 +290,8 @@ if __name__ == "__main__":
     result_queue = multiprocessing.Queue()
 
     # Start queue processing
-    queue_process = multiprocessing.Process(target=process_queues, args=(global_steps, person_queue, yolo_queue, result_queue))
+    terminate_flag = Event()
+    queue_process = multiprocessing.Process(target=process_queues, args=(global_steps, person_queue, yolo_queue, result_queue, terminate_flag))
     queue_process.start()
 
     root = tk.Tk()
@@ -260,16 +299,27 @@ if __name__ == "__main__":
 
     def update_gui():
         if not result_queue.empty():
-            step = result_queue.get()
-            app.completed_steps.append(step)
-            app.update_highlight()
+            result = result_queue.get()
 
-            if len(app.completed_steps) == len(global_steps):
-                app.mark_complete()
+            if isinstance(result, int):  # Step completed
+                app.completed_steps.append(result)
+                app.update_highlight()
+                app.message_box.config(text="")  # Clear the message box
+
+                if len(app.completed_steps) == len(global_steps):
+                    app.mark_complete()
+
+            elif isinstance(result, dict):
+                if not result["status"]:  # False condition
+                    # Update the message box with the error message
+                    app.message_box.config(text=result["message"])
+                elif result["status"]:  # Clear message on valid condition
+                    app.message_box.config(text="")
 
         root.after(100, update_gui)
 
     root.after(100, update_gui)
     root.mainloop()
 
-    queue_process.terminate()
+    terminate_flag.set()
+    queue_process.join()

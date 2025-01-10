@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 import torch
+from multiprocessing import Event
 
 class YOLODetector:
     def __init__(self, model_path):
@@ -78,7 +79,7 @@ class YOLODetector:
 
         return frame
 
-    def run(self, camera_index=0, threshold=0.5, queue=None):
+    def run(self, camera_index=0, threshold=0.5, queue=None, terminate_flag=None):
         cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
 
         if not cap.isOpened():
@@ -88,7 +89,7 @@ class YOLODetector:
         rois = self.load_rois(camera_index)
 
         try:
-            while True:
+            while not terminate_flag.is_set():
                 ret, frame = cap.read()
                 if not ret:
                     print("Error: Unable to read frame.")
@@ -143,7 +144,9 @@ class YOLODetector:
                 # Empty GPU memory
                 torch.cuda.empty_cache()
 
-                if cv2.waitKey(1) & 0xFF == ord('q') or cv2.getWindowProperty('YOLO Detection with ROIs and Bounding Boxes', cv2.WND_PROP_VISIBLE) < 1:
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+                if cv2.getWindowProperty('YOLO Detection with ROIs and Bounding Boxes', cv2.WND_PROP_VISIBLE) < 1:
                     break
         finally:
             cap.release()
