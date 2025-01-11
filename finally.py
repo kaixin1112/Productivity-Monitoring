@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, Button
+from tkinter import ttk, simpledialog, messagebox
 import multiprocessing
 from multiprocessing import Event
 from ultralytics import YOLO
@@ -9,6 +9,8 @@ from YOLODetector import YOLODetector
 from PersonDetector import PersonDetector
 import numpy as np
 import time
+import tkinter.font as tkFont
+from upload_to_dropbox import DropboxUploader
 
 # Load camera data from JSON
 def load_camera_data():
@@ -129,50 +131,65 @@ def analyze_photo(photo, model_path):
     
     return detections
 
-def process_image(camera_index, model_path):
-    """Capture and process an image from the specified camera."""
-    cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
-    if not cap.isOpened():
-        print(f"Error: Unable to access camera {camera_index}")
-        return
+def process_image(frame, model_path):
+    """Process frame and display results."""
+    detections = analyze_photo(frame, model_path)
 
-    try:
-        ret, frame = cap.read()
-        if not ret:
-            print("Error: Unable to capture frame.")
-            return
+    # Initialize the uploader
+    uploader = DropboxUploader(token_file="dropbox_tokens.json")
 
-        # Analyze the captured photo
-        detections = analyze_photo(frame, model_path)
+    # Draw bounding boxes
+    for detection in detections:
+        x1, y1, x2, y2 = detection["bbox"]
+        label = detection["label"]
+        confidence = detection["confidence"]
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        cv2.putText(frame, f"{label}: {confidence:.2f}", (x1, y1 - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-        # Check components
-        required_components = {"Motor": 2, "Wheel": 2, "Driver": 1, "ESP32": 1}
-        for detection in detections:
-            label = detection["label"]
-            if label in required_components and required_components[label] > 0:
-                required_components[label] -= 1
+    # Check components
+    required_components = {"Motor": 2, "Wheel": 2, "Driver": 1, "ESP32": 1}
+    for detection in detections:
+        label = detection["label"]
+        if label in required_components and required_components[label] > 0:
+            required_components[label] -= 1
 
-        # Determine pass/fail
-        if all(count == 0 for count in required_components.values()):
-            cv2.putText(frame, "PASS", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-        else:
-            cv2.putText(frame, "FAIL", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-
-        # Draw bounding boxes
-        for detection in detections:
-            x1, y1, x2, y2 = detection["bbox"]
-            label = detection["label"]
-            confidence = detection["confidence"]
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            cv2.putText(frame, f"{label}: {confidence:.2f}", (x1, y1 - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-
-        # Display the result
+    # Determine pass/fail
+    if all(count == 0 for count in required_components.values()):
+        cv2.putText(frame, "PASS", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
         cv2.imshow("Capture Result", frame)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-    finally:
-        cap.release()
+        cv2.waitKey(1)
+
+        # Prompt for Barcode ID
+        root = tk.Tk()
+        root.withdraw()
+        barcode_id = simpledialog.askstring("Input", "Enter Barcode ID:")
+
+        if barcode_id:
+            timestamp = time.strftime("%d%m%Y-%H%M%S")
+            filename = f"{barcode_id}_{timestamp}.png"
+            # Save the image with the barcode and timestamp
+            cv2.imwrite(filename, frame)
+            # Upload the file to Dropbox
+            uploader.upload_single_file(filename)
+        else:
+            print("No Barcode ID entered.")
+
+        return "PASS"
+    else:
+        missing_items = [item for item, count in required_components.items() if count > 0]
+        missing_message = f"Item Missing: {', '.join(missing_items)}"
+        cv2.putText(frame, "FAIL", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        cv2.imshow("Capture Result", frame)
+        cv2.waitKey(1)
+
+        # Show error message
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror("Error", missing_message)
+        print(missing_message)
+
+        return "FAIL"
 
 class StepTrackingApp:
     def __init__(self, root, global_steps, camera_data, model_path):
@@ -181,9 +198,20 @@ class StepTrackingApp:
         self.camera_data = camera_data
         self.model_path = model_path
         self.completed_steps = []
+        self.time_elapsed = 0  # Timer starts at 0 seconds
 
         # Configure the window
         self.root.title("Step Tracking")
+
+        # Define a larger font
+        self.custom_font = tkFont.Font(family="Helvetica", size=13)
+        self.header_font = tkFont.Font(family="Helvetica", size=15, weight="bold")
+
+        # Configure the Treeview style
+        style = ttk.Style()
+        style.configure("Treeview", font=self.custom_font, rowheight=25)  # Font for the rows
+        style.configure("Treeview.Heading", font=self.header_font)  # Font for the headers
+
         self.table = ttk.Treeview(root, columns=("Camera Index", "ROI", "Object"), show="headings")
         self.table.heading("Camera Index", text="Camera Index")
         self.table.heading("ROI", text="ROI")
@@ -194,11 +222,20 @@ class StepTrackingApp:
         for idx, (step, data) in enumerate(global_steps.items(), start=1):
             self.table.insert("", "end", iid=step, values=(data[0], data[1], data[2]))
 
-        self.message_box = tk.Label(root, text="", fg="red", wraplength=400, justify="left")
+        self.message_box = tk.Label(root, text="", fg="red", wraplength=400, justify="left", font=self.custom_font)
         self.message_box.pack(pady=10)
+
+        # Timer and Target Section
+        timer_frame = tk.Frame(root)
+        timer_frame.pack(fill=tk.X, pady=5)
+        tk.Label(timer_frame, text="Timer:").grid(row=0, column=0)
+        self.timer_label = tk.Label(timer_frame, text="00:00")
+        self.timer_label.grid(row=0, column=1)
 
         # Create terminate flag
         self.terminate_flag = Event()
+
+        self.update_timer()
 
         # Start camera processes
         self.start_camera_processes()
@@ -214,6 +251,14 @@ class StepTrackingApp:
             elif technique == "Object Detection (Vid)":
                 process = multiprocessing.Process(target=run_yolo_detector, args=(self.model_path, camera_index, yolo_queue, self.terminate_flag))
                 process.start()
+
+    def update_timer(self):
+        """Update the timer every second to show elapsed time in minutes and seconds."""
+        self.time_elapsed += 1
+        minutes = self.time_elapsed // 60
+        seconds = self.time_elapsed % 60
+        self.timer_label["text"] = f"{minutes:02}:{seconds:02}"
+        self.root.after(1000, self.update_timer)
 
     def highlight_row(self, steps):
         """Highlight the given step rows."""
@@ -251,32 +296,37 @@ class CaptureApp:
                 self.launch_camera_window()
 
     def launch_camera_window(self):
-        """Open OpenCV window with a capture button."""
-        while True:
-            cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
+        """Open OpenCV window for capture."""
+        cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
+        if not cap.isOpened():
+            print("Error: Unable to access camera.")
+            return
 
-            if not cap.isOpened():
-                print("Error: Unable to access camera.")
-                return
-
+        try:
             while True:
                 ret, frame = cap.read()
                 if not ret:
                     print("Error: Unable to read from camera.")
                     break
 
-                cv2.imshow("Object Detection (Cam)", frame)
+                cv2.imshow("Live Feed - Press 'c' to Capture or 'q' to Quit", frame)
 
-                if cv2.waitKey(1) & 0xFF == ord('c'):  # 'c' for capture
-                    cap.release()
-                    cv2.destroyAllWindows()
-                    process_image(self.camera_index, self.model_path)
-                    return
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('c'):
+                    process_result = process_image(frame, self.model_path)
 
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    cap.release()
-                    cv2.destroyAllWindows()
-                    return
+                    if process_result == "PASS":
+                        return
+
+                    elif process_result == "FAIL":
+                        # Continue streaming until a valid capture is made
+                        continue
+
+                elif key == ord('q'):
+                    break
+        finally:
+            cap.release()
+            cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     steps_data = load_steps_data()
