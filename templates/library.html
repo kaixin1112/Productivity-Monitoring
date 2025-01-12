@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Library</title>
+    <style>
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            text-align: center;
+            padding: 20px;
+            background-color: lightblue;
+        }
+        .menu {
+            background-color: #333;
+            overflow: hidden;
+        }
+        .menu a {
+            float: left;
+            display: block;
+            color: white;
+            text-align: center;
+            padding: 14px 16px;
+            text-decoration: none;
+        }
+        .menu a:hover {
+            background-color: #ddd;
+            color: black;
+        }
+        .search-container {
+            margin: 20px auto;
+        }
+        .search-container input {
+            padding: 10px;
+            width: 60%;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .search-container button {
+            padding: 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .search-container button:hover {
+            background-color: #0056b3;
+        }
+        .folders {
+            margin-top: 20px;
+        }
+        .folder-item {
+            margin: 10px;
+            text-align: center;
+            display: inline-block;
+            border-radius: 10px;
+            padding: 5px;
+            background-color: white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .folder-item a {
+            text-decoration: none;
+            color: #333;
+        }
+        .folder-item:hover {
+            background-color: #f0f0f0;
+        }
+        .image-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+        }
+        .image-grid-item {
+            text-align: center;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 10px;
+            background-color: white;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        .image-grid-item img {
+            max-width: 200px;
+            max-height: 200px;
+            object-fit: cover;
+            border-radius: 5px;
+        }
+        .image-grid-item p {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Navigation Menu -->
+    <div class="menu">
+        <a href="/dashboard">Dashboard</a>
+        <a href="/logout">Logout</a>
+    </div>
+
+    <h1>Library</h1>
+
+    <!-- Search Bar -->
+    <div class="search-container">
+        <form method="get" action="/library">
+            <input type="text" name="query" value="{{ query }}" placeholder="Search by folder name (e.g., 11_01_2025)">
+            <button type="submit">Search</button>
+        </form>
+    </div>
+
+    <!-- Display Available Folders -->
+    <h2>Available Date Folders</h2>
+    <div class="folders">
+        {% for folder in date_folders %}
+            <div class="folder-item">
+                <a href="/library/{{ folder.name }}">{{ folder.name }}</a>
+            </div>
+        {% endfor %}
+    </div>
+
+    <!-- Display Images in the Selected Folder -->
+    {% if image_links %}
+    <h2>Files in Selected Folder:</h2>
+    <div class="image-grid">
+        {% for image in image_links %}
+            <div class="image-grid-item">
+                <a href="{{ image.link }}" target="_blank">
+                    <img src="{{ image.link }}" alt="{{ image.name }}">
+                </a>
+                <p>{{ image.name }}</p>
+            </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+</body>
+</html>

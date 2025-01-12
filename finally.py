@@ -35,7 +35,10 @@ def populate_global_steps(steps_data):
 def run_person_detector(camera_index, queue, terminate_flag):
     """Standalone function for Person Detection."""
     detector = PersonDetector()
+    print(f"Starting PersonDetector on camera {camera_index}.")  # Debug log
     detector.run(camera_index, queue)
+    print(f"PersonDetector for camera {camera_index} terminated.")  # Debug log
+
 
 def run_yolo_detector(model_path, camera_index, queue, terminate_flag):
     """Standalone function for YOLO Detection."""
@@ -43,24 +46,22 @@ def run_yolo_detector(model_path, camera_index, queue, terminate_flag):
     detector.run(camera_index=camera_index, threshold=0.6, queue=queue, terminate_flag=terminate_flag)
 
 def process_queues(global_steps, person_queue, yolo_queue, result_queue, terminate_flag):
-    """Processes queues to validate detections and handle step completions."""
     current_step = 1
-    false_object_detected = False  # Tracks if a false object is currently detected
+    false_object_detected = False
 
     while current_step <= len(global_steps) and not terminate_flag.is_set():
-        # Get the expected details for the current step
         expected_camera_index, expected_roi, expected_object = global_steps[current_step]
-
+        
         person_message = None
         yolo_message = None
 
-        # Check both queues for new messages
         if not person_queue.empty():
             person_message = person_queue.get()
+
         if not yolo_queue.empty():
             yolo_message = yolo_queue.get()
 
-        # Validate detection from PersonDetector
+        # Validate detection
         if person_message:
             if (person_message["camera_index"] == expected_camera_index and
                 person_message["roi"] == expected_roi and
@@ -176,6 +177,7 @@ def process_image(frame, model_path):
             print("No Barcode ID entered.")
 
         return "PASS"
+
     else:
         missing_items = [item for item, count in required_components.items() if count > 0]
         missing_message = f"Item Missing: {', '.join(missing_items)}"
@@ -199,18 +201,19 @@ class StepTrackingApp:
         self.model_path = model_path
         self.completed_steps = []
         self.time_elapsed = 0  # Timer starts at 0 seconds
+        self.timer_running = False  # Flag to control timer state
 
         # Configure the window
         self.root.title("Step Tracking")
 
-        # Define a larger font
+        # Define fonts
         self.custom_font = tkFont.Font(family="Helvetica", size=13)
         self.header_font = tkFont.Font(family="Helvetica", size=15, weight="bold")
 
-        # Configure the Treeview style
+        # Configure Treeview style
         style = ttk.Style()
-        style.configure("Treeview", font=self.custom_font, rowheight=25)  # Font for the rows
-        style.configure("Treeview.Heading", font=self.header_font)  # Font for the headers
+        style.configure("Treeview", font=self.custom_font, rowheight=25)
+        style.configure("Treeview.Heading", font=self.header_font)
 
         self.table = ttk.Treeview(root, columns=("Camera Index", "ROI", "Object"), show="headings")
         self.table.heading("Camera Index", text="Camera Index")
@@ -218,26 +221,25 @@ class StepTrackingApp:
         self.table.heading("Object", text="Object")
         self.table.pack(fill=tk.BOTH, expand=True)
 
-        # Populate the table with global_steps
+        # Populate table with steps
         for idx, (step, data) in enumerate(global_steps.items(), start=1):
             self.table.insert("", "end", iid=step, values=(data[0], data[1], data[2]))
 
         self.message_box = tk.Label(root, text="", fg="red", wraplength=400, justify="left", font=self.custom_font)
         self.message_box.pack(pady=10)
 
-        # Timer and Target Section
+        # Timer section
         timer_frame = tk.Frame(root)
         timer_frame.pack(fill=tk.X, pady=5)
         tk.Label(timer_frame, text="Timer:").grid(row=0, column=0)
         self.timer_label = tk.Label(timer_frame, text="00:00")
         self.timer_label.grid(row=0, column=1)
 
-        # Create terminate flag
         self.terminate_flag = Event()
+        self.timer_id = None  # Store timer callback ID
+        self.person_processes = []  # Track person detection processes
+        self.yolo_processes = []  # Track YOLO detection processes
 
-        self.update_timer()
-
-        # Start camera processes
         self.start_camera_processes()
 
     def start_camera_processes(self):
@@ -248,20 +250,50 @@ class StepTrackingApp:
             if technique == "Person Detection":
                 process = multiprocessing.Process(target=run_person_detector, args=(camera_index, person_queue, self.terminate_flag))
                 process.start()
+                self.person_processes.append(process)
             elif technique == "Object Detection (Vid)":
                 process = multiprocessing.Process(target=run_yolo_detector, args=(self.model_path, camera_index, yolo_queue, self.terminate_flag))
                 process.start()
+                self.yolo_processes.append(process)
+
+    def terminate_yolo_processes(self):
+        for process in self.yolo_processes:
+            if process.is_alive():
+                process.terminate()
+        self.yolo_processes.clear()
+
+    def terminate_person_processes(self):
+        for process in self.person_processes:
+            if process.is_alive():
+                process.terminate()
+        self.person_processes.clear()
+
+    def terminate_all_processes(self):
+        self.terminate_yolo_processes()
+        self.terminate_person_processes()
 
     def update_timer(self):
-        """Update the timer every second to show elapsed time in minutes and seconds."""
+        if not self.timer_running:
+            return
+
         self.time_elapsed += 1
         minutes = self.time_elapsed // 60
         seconds = self.time_elapsed % 60
         self.timer_label["text"] = f"{minutes:02}:{seconds:02}"
-        self.root.after(1000, self.update_timer)
+        self.timer_id = self.root.after(1000, self.update_timer)
+
+    def start_timer(self):
+        if not self.timer_running:
+            self.timer_running = True
+            self.update_timer()
+
+    def stop_timer(self):
+        if self.timer_running:
+            self.timer_running = False
+            if self.timer_id:
+                self.root.after_cancel(self.timer_id)
 
     def highlight_row(self, steps):
-        """Highlight the given step rows."""
         for row in self.table.get_children():
             self.table.item(row, tags=())
         self.table.tag_configure("highlight", background="lightblue")
@@ -269,20 +301,51 @@ class StepTrackingApp:
             self.table.item(step, tags=("highlight",))
 
     def update_highlight(self):
-        """Update the highlight for completed steps."""
-        self.highlight_row(self.completed_steps)
+        if self.completed_steps:
+            print(f"Updating highlight for steps: {self.completed_steps}")
+            self.highlight_row(range(1, len(self.completed_steps) + 1))
+            if len(self.completed_steps) == 1:  # Start timer on first highlight
+                self.start_timer()
+
+
+    def log_duration(self, duration):
+        try:
+            with open("avg.txt", "a") as file:
+                file.write(f"{duration}\n")
+        except Exception as e:
+            print(f"Error logging duration: {e}")
+
+    def reset_app(self):
+        self.stop_timer()
+        self.terminate_all_processes()  # Terminate all running processes
+        self.completed_steps.clear()
+        self.time_elapsed = 0
+        self.timer_label["text"] = "00:00"
+        self.highlight_row([])  # Unhighlight all steps
+        self.terminate_flag.set()  # Signal termination
+
+        # Restart camera processes and queues
+        global person_queue, yolo_queue, result_queue, queue_process
+        person_queue = multiprocessing.Queue()
+        yolo_queue = multiprocessing.Queue()
+        result_queue = multiprocessing.Queue()
+        self.terminate_flag.clear()
+
+        # Start camera processes
+        self.start_camera_processes()
+
+        # Restart queue processing
+        if 'queue_process' in globals() and queue_process.is_alive():
+            queue_process.terminate()
+        queue_process = multiprocessing.Process(target=process_queues, args=(self.global_steps, person_queue, yolo_queue, result_queue, self.terminate_flag))
+        queue_process.start()
 
     def mark_complete(self):
-        """Highlight the last row and then launch the capture app."""
-        self.completed_steps.append(len(self.global_steps))  # Highlight the last row
-        self.update_highlight()  # Update the table with the last step highlighted
-
-        # Launch the capture app
+        self.stop_timer()
+        self.log_duration(self.time_elapsed)
+        self.terminate_yolo_processes()  # Only terminate YOLO processes
         self.root.title("All Steps Completed")
         self.root.after(500, lambda: CaptureApp(self.camera_data, self.model_path))
-
-        # Terminate background processes
-        self.terminate_flag.set()
 
 class CaptureApp:
     def __init__(self, camera_data, model_path):
@@ -316,6 +379,7 @@ class CaptureApp:
                     process_result = process_image(frame, self.model_path)
 
                     if process_result == "PASS":
+                        app.reset_app()
                         return
 
                     elif process_result == "FAIL":
@@ -361,12 +425,12 @@ if __name__ == "__main__":
 
             elif isinstance(result, dict):
                 if not result["status"]:  # False condition
-                    # Update the message box with the error message
                     app.message_box.config(text=result["message"])
                 elif result["status"]:  # Clear message on valid condition
                     app.message_box.config(text="")
 
         root.after(100, update_gui)
+
 
     root.after(100, update_gui)
     root.mainloop()

@@ -1,48 +1,14 @@
 import cv2
 import os
+import mediapipe as mp
 import torch
+from udp_send import udp_sender
 
 class PersonDetector:
     def __init__(self):
-        # Load class labels
-        with open("coco.names", "r") as file:
-            self.class_names = [line.strip() for line in file.readlines()]
-        self.person_class_id = self.class_names.index("person")  # Get the class ID for 'person'
-
-        self.model_path = "frozen_inference_graph.pb"
-        self.config_path = "ssd_mobilenet_v3_large_coco_2020_01_14.pbtxt"
-
-        # Load pre-trained DNN model
-        self.net = cv2.dnn_DetectionModel(self.model_path, self.config_path)
-        self.net.setInputSize(320, 320)
-        self.net.setInputScale(1.0 / 127.5)
-        self.net.setInputMean((127.5, 127.5, 127.5))
-        self.net.setInputSwapRB(True)
-
-    def detect_persons(self, frame, rois):
-        detections = self.net.detect(frame, confThreshold=0.7)  # Confidence threshold set to 0.7
-        class_ids, confidences, boxes = detections if len(detections) == 3 else ([], [], [])
-
-        global_cam = []  # Store detections within specific ROIs
-
-        if len(class_ids) > 0:
-            for i, (class_id, confidence, box) in enumerate(zip(class_ids.flatten(), confidences.flatten(), boxes)):
-                if class_id == self.person_class_id:
-                    if i == 0:  # Only consider the first detected person
-                        x, y, w, h = box
-                        center_x = x + w // 2
-                        center_y = y + h // 2
-                        for idx, (rx, ry, rw, rh) in enumerate(rois):
-                            # Check if the detection is within a specific ROI
-                            if rx <= center_x <= rx + rw and ry <= center_y <= ry + rh:
-                                global_cam.append((idx + 1, "Person"))
-
-                        # Draw bounding box and label on the frame
-                        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 255), 2)
-                        cv2.putText(frame, "Person", (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
-                    else:
-                        break  # Ignore additional detections
-        return frame, global_cam
+        self.mp_pose = mp.solutions.pose
+        self.pose = self.mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+        self.person_detected_last_frame = False  # State to track person detection
 
     def draw_rois(self, frame, rois):
         for idx, roi in enumerate(rois):
@@ -63,8 +29,8 @@ class PersonDetector:
 
             # Draw green background for text
             cv2.rectangle(frame, (lbl_x, lbl_y), 
-                        (lbl_x + lbl_w + 2 * lbl_margin, lbl_y + lbl_h + 2 * lbl_margin), 
-                        color=(0, 255, 0), thickness=-1)
+                          (lbl_x + lbl_w + 2 * lbl_margin, lbl_y + lbl_h + 2 * lbl_margin), 
+                          color=(0, 255, 0), thickness=-1)
 
             # Draw text in black
             cv2.putText(frame, label, (lbl_x + lbl_margin, lbl_y + lbl_h), 
@@ -72,6 +38,55 @@ class PersonDetector:
 
         return frame
 
+    def detect_and_draw_skeleton(self, frame, rois, queue, camera_index):
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = self.pose.process(rgb_frame)
+
+        person_detected = False
+
+        if results.pose_landmarks:
+            # Get coordinates for eyes and nose
+            landmarks = results.pose_landmarks.landmark
+            left_eye = landmarks[self.mp_pose.PoseLandmark.LEFT_EYE]
+            right_eye = landmarks[self.mp_pose.PoseLandmark.RIGHT_EYE]
+            nose = landmarks[self.mp_pose.PoseLandmark.NOSE]
+
+            if left_eye.visibility > 0.5 and right_eye.visibility > 0.5 and nose.visibility > 0.5:
+                le_x, le_y = int(left_eye.x * frame.shape[1]), int(left_eye.y * frame.shape[0])
+                re_x, re_y = int(right_eye.x * frame.shape[1]), int(right_eye.y * frame.shape[0])
+                nose_x, nose_y = int(nose.x * frame.shape[1]), int(nose.y * frame.shape[0])
+
+                for idx, (rx1, ry1, rw, rh) in enumerate(rois):
+                    # Check if both eyes and nose are inside the ROI
+                    in_roi = (rx1 <= le_x <= rx1 + rw and ry1 <= le_y <= ry1 + rh and
+                              rx1 <= re_x <= rx1 + rw and ry1 <= re_y <= ry1 + rh and
+                              rx1 <= nose_x <= rx1 + rw and ry1 <= nose_y <= ry1 + rh)
+                    if in_roi:
+                        queue.put({"camera_index": camera_index, "roi": idx + 1, "object": "Person"})
+
+                person_detected = True
+
+            # Draw skeleton on the frame
+            mp.solutions.drawing_utils.draw_landmarks(
+                frame, results.pose_landmarks, self.mp_pose.POSE_CONNECTIONS,
+                mp.solutions.drawing_utils.DrawingSpec(color=(0, 255, 0), thickness=2, circle_radius=2),
+                mp.solutions.drawing_utils.DrawingSpec(color=(0, 0, 255), thickness=2, circle_radius=2)
+            )
+
+        # Annotate frame based on detection status
+        if person_detected:
+            cv2.putText(frame, "Person Detected", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            self.person_detected_last_frame = True  # Update the state
+            udp_sender("192.168.43.58", 12345, 'Stop')
+        else:
+            cv2.putText(frame, "Person Not Present", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            # Only send UDP alert if no person was detected in the current frame
+            # and a person was detected in the previous frame
+            if self.person_detected_last_frame:
+                self.person_detected_last_frame = False  # Reset state
+                udp_sender("192.168.43.58", 12345, 'Alert')
+
+        return frame
 
     def run(self, camera_index, queue):
         cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
@@ -101,26 +116,25 @@ class PersonDetector:
                 # Draw ROIs on the frame
                 frame = self.draw_rois(frame, rois)
 
-                # Detect persons in the frame
-                frame, detections = self.detect_persons(frame, rois)
-
-                # Send detection messages to the queue
-                for roi_index, obj in detections:
-                    queue.put({"camera_index": camera_index, "roi": roi_index, "object": obj})
+                # Detect persons and draw skeletons
+                frame = self.detect_and_draw_skeleton(frame, rois, queue, camera_index)
 
                 # Display the frame
-                cv2.imshow("Person Detection with ROIs", frame)
+                cv2.imshow("Person Detection with Skeleton", frame)
 
                 # Empty GPU memory
                 torch.cuda.empty_cache()
 
                 # Exit loop on 'q' key press
-                if cv2.waitKey(1) & 0xFF == ord('q') or cv2.getWindowProperty('Person Detection with ROIs', cv2.WND_PROP_VISIBLE) < 1:
+                if cv2.waitKey(1) & 0xFF == ord('q') or cv2.getWindowProperty('Person Detection with Skeleton', cv2.WND_PROP_VISIBLE) < 1:
                     break
         finally:
             cap.release()
             cv2.destroyAllWindows()
 
 if __name__ == '__main__':
+    from queue import Queue
+
+    detection_queue = Queue()
     detector = PersonDetector()
-    detector.run(0)
+    detector.run(1, detection_queue)
