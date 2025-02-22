@@ -44,7 +44,10 @@ UTM EECS 2025 - Mechatronics Best Project Awards
 
 <img src="https://github.com/kaixin1112/Productivity-Monitoring/blob/main/images/Screenshot_2025-02-22_171038.png" width="500"> 
 
-### Future Work  
+## 🎥 Demo Video  
+🔗 [Click here to watch the demo](https://drive.google.com/file/d/12EiUAX_K47aLNORtINfUFSY0x2rk72p3/view?usp=sharing)
+
+## Future Work  
 🔹 IoT Integration for smart analytics  
 🔹 Cloud-based AI processing for scalability  
 
