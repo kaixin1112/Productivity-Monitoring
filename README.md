@@ -51,5 +51,6 @@ UTM EECS 2025 - Mechatronics Best Project Awards
 🔹 IoT Integration for smart analytics  
 🔹 Cloud-based AI processing for scalability  
 
+
 🚀 **Transforming Manufacturing with AI Automation!**  
 
