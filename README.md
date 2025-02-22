@@ -2,8 +2,6 @@
 
 <img src="https://github.com/kaixin1112/Productivity-Monitoring/blob/main/mainpage.jpg" alt="Productivity Monitoring System" width="1000"/>
 
-## Table of Contents
-
 ## Introduction  
 This project is an **AI-powered productivity monitoring system** designed to automate **operator tracking, workflow monitoring, and quality control** in manufacturing. Using **pose detection (Mediapipe)** and **object detection (YOLOv5)**, the system enhances efficiency, reduces manual supervision, and ensures **real-time feedback** for optimized operations.  
 
@@ -38,6 +36,8 @@ This project is an **AI-powered productivity monitoring system** designed to aut
 *Stores monitoring data automatically in cloud storage for analysis.*
 
 <img src="https://github.com/kaixin1112/Productivity-Monitoring/blob/main/images/Screenshot_2025-01-20_184039.png" width="500">  
+
+
 
 ## 🏅 Awards & Recognition  
 UTM EECS 2025 - Mechatronics Best Project Awards  
