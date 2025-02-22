@@ -15,19 +15,19 @@ This project is an **AI-powered productivity monitoring system** designed to aut
 
 ✅ **AI-Powered Pose & Object Detection**  
 *Real-time tracking of operators and product verification using YOLOv5 and Mediapipe.*  
-![Pose & Object Detection](https://github.com/kaixin1112/Productivity-Monitoring/blob/main/images/Screenshot_2025-01-20_172811.png)
+<img src="https://github.com/kaixin1112/Productivity-Monitoring/blob/main/images/Screenshot_2025-01-20_172811.png" width="500">
 
 ✅ **Real-Time Alerts & Feedback**  
 *Instant notifications for workflow issues and quality control alerts.*  
-![Real-Time Feedback](https://github.com/kaixin1112/Productivity-Monitoring/blob/main/images/Screenshot_2025-01-20_172859.png)  
+<img src="https://github.com/kaixin1112/Productivity-Monitoring/blob/main/images/Screenshot_2025-01-20_172859.png" width="500">  
 
 ✅ **Multi-Camera Setup**  
 *Integrates multiple cameras for complete production line monitoring.*  
-![Multi-Camera Setup](https://github.com/kaixin1112/Productivity-Monitoring/blob/main/images/Screenshot_2025-01-22_084149.png)  
+<img src="https://github.com/kaixin1112/Productivity-Monitoring/blob/main/images/Screenshot_2025-01-22_084149.png" width="500">  
 
 ✅ **Automated Data Logging**  
 *Stores monitoring data automatically in cloud storage for analysis.*  
-![Automated Logging](https://github.com/kaixin1112/Productivity-Monitoring/blob/main/images/Screenshot_2025-01-20_184039.png)  
+<img src="https://github.com/kaixin1112/Productivity-Monitoring/blob/main/images/Screenshot_2025-01-20_184039.png" width="500">  
 
 ### 🏅 Awards & Recognition  
 If your project has received awards, you can list them here. You can also add an image of the awards by uploading it to your repository and linking it like this:  
