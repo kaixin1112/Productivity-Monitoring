@@ -3,11 +3,11 @@
 <img src="https://github.com/kaixin1112/Productivity-Monitoring/blob/main/mainpage.jpg" alt="Productivity Monitoring System" width="1000"/>
 
 ## Introduction  
-This project is an **AI-powered productivity monitoring system** designed to automate **operator tracking, workflow monitoring, and quality control** in manufacturing. Using **pose detection (Mediapipe)** and **object detection (YOLOv5)**, the system enhances efficiency, reduces manual supervision, and ensures **real-time feedback** for optimized operations.  
+This project is an **AI-powered productivity monitoring system** designed to automate **operator tracking, workflow monitoring and quality control** in manufacturing. Using **pose detection (Mediapipe)** and **object detection (YOLOv5)**, the system enhances efficiency, reduces manual supervision and ensures **real-time feedback** for optimized operations.  
 
 ## Overview  
-🔹 **Problem:** Manual monitoring is inefficient, error-prone, and lacks real-time insights.  
-🔹 **Solution:** AI-driven system for **real-time tracking, automated quality checks, and performance monitoring** using a multi-camera setup.  
+🔹 **Problem:** Manual monitoring is inefficient, error-prone and lacks real-time insights.  
+🔹 **Solution:** AI-driven system for **real-time tracking, automated quality checks and performance monitoring** using a multi-camera setup.  
 
 ## Features  
 
