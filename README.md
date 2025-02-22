@@ -19,16 +19,19 @@ This project is an **AI-powered productivity monitoring system** designed to aut
 <img src="https://github.com/kaixin1112/Productivity-Monitoring/blob/main/images/Screenshot_2025-01-20_172811.png" width="500">
 
 
+
 ✅ **Real-Time Alerts & Feedback**  
 *Instant notifications for workflow issues and quality control alerts.*
 
 <img src="https://github.com/kaixin1112/Productivity-Monitoring/blob/main/images/Screenshot_2025-01-20_172859.png" width="500">  
 
 
+
 ✅ **Multi-Camera Setup**  
 *Integrates multiple cameras for complete production line monitoring.*
 
 <img src="https://github.com/kaixin1112/Productivity-Monitoring/blob/main/images/Screenshot_2025-01-22_084149.png" width="500">  
+
 
 
 ✅ **Automated Data Logging**  
