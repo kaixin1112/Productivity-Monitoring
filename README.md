@@ -40,9 +40,9 @@ This project is an **AI-powered productivity monitoring system** designed to aut
 <img src="https://github.com/kaixin1112/Productivity-Monitoring/blob/main/images/Screenshot_2025-01-20_184039.png" width="500">  
 
 ### 🏅 Awards & Recognition  
-If your project has received awards, you can list them here. You can also add an image of the awards by uploading it to your repository and linking it like this:  
+UTM EECS 2025 - Mechatronics Best Project Awards  
 
-![Award Image](https://github.com/your-username/your-repo-name/blob/main/awards.jpg)  
+<img src="https://github.com/kaixin1112/Productivity-Monitoring/blob/main/images/Screenshot_2025-02-22_171038.png" width="500"> 
 
 ### Future Work  
 🔹 IoT Integration for smart analytics  
